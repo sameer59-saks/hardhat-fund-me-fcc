@@ -1,0 +1,41 @@
+{
+  "language": "Solidity",
+  "sources": {
+    "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol": {
+      "content": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.0;\n\ninterface AggregatorV3Interface {\n  function decimals() external view returns (uint8);\n\n  function description() external view returns (string memory);\n\n  function version() external view returns (uint256);\n\n  function getRoundData(uint80 _roundId)\n    external\n    view\n    returns (\n      uint80 roundId,\n      int256 answer,\n      uint256 startedAt,\n      uint256 updatedAt,\n      uint80 answeredInRound\n    );\n\n  function latestRoundData()\n    external\n    view\n    returns (\n      uint80 roundId,\n      int256 answer,\n      uint256 startedAt,\n      uint256 updatedAt,\n      uint80 answeredInRound\n    );\n}\n"
+    },
+    "contracts/FundMe.sol": {
+      "content": "// SPDX-License-Identifier: MIT\n\npragma solidity ^0.8.8;\n\n//Get funds\n//Withdraw funds\n// Set Min Funding Value\n//pragma solidity ^0.8.8;\n\n//imports\nimport \"./PriceConverter.sol\";\nimport \"@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol\";\n\n//Error Codes\nerror NotOwner();\n\n// interfaces, Libraries, Contracts\n\n/** @title A Contract for Crowd Funding\n * @author Sameer Varpe\n * @notice This contract is to demo a sample funding  contract\n * @dev This implements  price feeds as our library\n */\ncontract FundMe {\n\n    //type declarations \n    using PriceConverter for uint256;\n\n    //constant  keywork reduces the gas cost\n    uint256 public constant MINIMUM_USD = 50   * 1e18;//sending  from  outside or  transaction will be  cancelled.\n    address[] public funders;\n    //mapping(address => uint256) private s_addressToAmountFunded;\n    AggregatorV3Interface private s_priceFeed;\n    \n    // State variables\n    mapping(address=>uint256) public addressToAmountFunded;\n\n    //immutable saves more  gas\n    address public immutable i_owner;\n\n    AggregatorV3Interface public priceFeed;\n\n    modifier onlyOwner {\n            //require(msg.sender == i_owner, \"Sender is not owner\");\n            if(msg.sender != i_owner) { revert  NotOwner();}\n            _;\n        }\n\n\n    // functions order\n    // Contructor\n    //recieve\n    //fallback\n    //external\n    //public\n    //internal\n    //private\n    //view /pure\n    \n\n\n\n\n\n    //called auto when contract is deployed\n    //adding parameter  to contructor then we can save  aggregator v3 addterss as a  global var\n    /** constructor(address  priceFeedAddres) {\n        i_owner = msg.sender;\n        priceFeed = AggregatorV3Interface(priceFeedAddres); //refer to priceconvertor.sol for reference\n        //we can take this priceFeedAddres as a global var  and use  it   with priceconvertor\n         // with hardhat  fund me we  want  t o avoid  hardcoding  of  addres with v3interface\n    }*/\n\n    constructor(address priceFeed) {\n        s_priceFeed = AggregatorV3Interface(priceFeed);\n        i_owner = msg.sender;\n    }\n\n    /*function fund() public payable{\n        //make the function  payable to make it appear for what is doing distinctly shown as  red button. Public  will make it accessible\n\n        //Want  to be able to set min fund amount in USD\n        //1. How do we send ETH  to this contract\n\n        //We are able  to access value attribute check  Deploy & Run transaction\n\n        //require // send  2 ETH  min to  fund\n        require (getConversionRate(msg.value) >= MINIMUM_USD, \"Send Enough ETH\");// 1e18 == 1 * 10 * 18 == 1000000000000000000  wei  is 1  ETH \n    }*/\n\n        function fund() public payable {\n        //msg.value here is  whatever value it is for ETH or any other cryptocurrency we are interacting with\n            require(msg.value.getConversionRate(priceFeed) >= MINIMUM_USD, \"You need to spend more ETH!\");\n        //require(getConversionRate(msg.value) >= MINIMUM_USD, \"You need to spend more ETH!\");\n        // require(PriceConverter.getConversionRate(msg.value) >= MINIMUM_USD, \"You need to spend more ETH!\");\n        addressToAmountFunded[msg.sender] += msg.value;\n        funders.push(msg.sender);\n    }\n\n    function withdraw() public  onlyOwner{\n\n        //require(msg.sender == owner, \"Sender is not owner\");\n\n        for(uint256 funderIndex = 0; funderIndex < funders.length; funderIndex++) {\n            address funder = funders[funderIndex];\n            addressToAmountFunded[funder] = 0;\n        }\n\n        //reset the array\n        funders = new address[](0);\n\n        //actually withdraw funds\n        //call\n                           //bytes memory dataReturned is optional     \n        (bool callSuccess, ) = payable(msg.sender).call{value: address(this).balance}(\"\");\n        require(callSuccess, \"call failed\");    \n\n    }\n\n        // Explainer from: https://solidity-by-example.org/fallback/\n    // Ether is sent to contract\n    //      is msg.data empty?\n    //          /   \\ \n    //         yes  no\n    //         /     \\\n    //    receive()?  fallback() \n    //     /   \\ \n    //   yes   no\n    //  /        \\\n    //receive()  fallback()\n\n    \n    //This functions  are called if the user  called the wrong function and  we  still  want  to  handle  the  call  data\n    //  User w ill lose the moeny  in a normal  scenari, however if  we handle the data  with some  special  function\n    // we can still call these special function when user fails tto call the correct one and within those special  function call fund()\n    \n    fallback() external payable {  //  if htere is data  associated  with the function  but function itself is  wrong then  fallback is called\n        fund();\n    }\n\n    receive() external payable { // when there  is  no  data    associated  recieve() gets called\n        fund();\n    }\n\n\n    \n}\n\n"
+    },
+    "contracts/PriceConverter.sol": {
+      "content": "// SPDX-License-Identifier: MIT\n\npragma solidity ^0.8.8;\n\n\nimport \"@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol\";\n\nlibrary PriceConverter {\n\n    //function withdraw(\n\n    //get  the conversion rate  using func\n\n    //get  the price of ETH\n    function getPrice(AggregatorV3Interface priceFeed) internal view returns (uint256){\n        //ABI : It is different  functions  and properties\n        // Address : 0xD4a33860578De61DBAbDc8BFdb98FD742fA7028e goerli contract address from docs\n\n       // AggregatorV3Interface priceFeed = AggregatorV3Interface(0xD4a33860578De61DBAbDc8BFdb98FD742fA7028e);\n        (, int256 price, , , ) = priceFeed.latestRoundData();\n        // ETH in  tterms of USD\n        // ETH current price \n        //8 deimals associated in priceFeed we need 10 more\n        return uint256(price * 1e10);\n\n    }\n    //we  eliminated the use of getversion  function for fundme \n   /* function getVersion() internal  view returns (uint256) {\n        // with hardhat  fund me we  want  t o avoid  hardcoding  of  addres with v3interface\n        AggregatorV3Interface priceFeed = AggregatorV3Interface(0xD4a33860578De61DBAbDc8BFdb98FD742fA7028e);\n        return priceFeed.version();//version of price feed\n\n    }*/\n\n    function getConversionRate(uint256 ethAmount, AggregatorV3Interface priceFeed) internal view returns (uint256){\n        uint256 ethPrice = getPrice(priceFeed);\n        uint256 ethAmountInUSD = (ethPrice * ethAmount) / 1e18; //need  to do  this as we do not want to end up with too many 0's\n\n        return ethAmountInUSD;\n}\n\n}"
+    }
+  },
+  "settings": {
+    "optimizer": {
+      "enabled": false,
+      "runs": 200
+    },
+    "outputSelection": {
+      "*": {
+        "*": [
+          "abi",
+          "evm.bytecode",
+          "evm.deployedBytecode",
+          "evm.methodIdentifiers",
+          "metadata",
+          "devdoc",
+          "userdoc",
+          "storageLayout",
+          "evm.gasEstimates"
+        ],
+        "": [
+          "ast"
+        ]
+      }
+    },
+    "metadata": {
+      "useLiteralContent": true
+    }
+  }
+}
